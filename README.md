@@ -66,12 +66,16 @@ evitare la consumazione inutile di crediti.**
 ```shell
 gcloud dataproc clusters delete <nome> --region <regione>
 ```
-## Tempi di esecuzione
+## Tempi di esecuzione su europe-west9
 
 | tempo (ms) | num workers | speedup |
 |------------|-------------|---------|
 | 720696     | 1           | xx      |
-| 956543     | 2           | xx      |
-| xx         | 3           | xx      |
-| xx         | 4           | xx      |
+| 1040945    | 2           | xx      |
+| 1307002    | 3           | xx      |
+| 1382905    | 4           | xx      |
 
+### Copia incolla per i comandi
+gcloud dataproc clusters create scp --region europe-west9 --zone europe-west9-a --master-machine-type n4-standard-2 --master-boot-disk-size 100g --num-workers 2 --worker-machine-type n4-standard-2 --worker-boot-disk-size 100 --image-version 2.3
+
+gcloud dataproc jobs submit spark --cluster=scp --region=europe-west9 --jar=gs://scp-davide-copurchase/scp-copur.jar -- gs://scp-davide-copurchase/input.csv gs://scp-davide-copurchase/output
