@@ -71,7 +71,7 @@ object CoPurchaseAnalysis {
     val reduceEnd = System.nanoTime()
     val saveStart = System.nanoTime()
 
-    coPurchaseCounts.saveAsTextFile(outputPath)
+    coPurchaseCounts.repartition(1).saveAsTextFile(outputPath)
 
     val saveEnd = System.nanoTime()
     val timeEnd = System.nanoTime()
