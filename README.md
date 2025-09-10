@@ -72,10 +72,22 @@ gcloud dataproc clusters delete <nome> --region <regione>
 |------------|-------------|---------|
 | 720696     | 1           | xx      |
 | 1040945    | 2           | xx      |
-| 1307002    | 3           | xx      |
+| 1349805    | 3           | xx      |
 | 1382905    | 4           | xx      |
+
+## Tempi di esecuzione su europe-west1 con n1standard-4
+
+| tempo (ns)    | tempo (sec) | num nodi | speedup | scaling |
+|---------------|-------------|----------|---------|---------|
+| 566039127816  | 566         | 1        | --      | --      |
+| 274455106101  | 274         | 2        | 2,07    | 1,03    |
+| 179804647602  | 180         | 3        | 3,14    | 1,05    |
+| 171951171928  | 172         | 4        | 3,29    | 0,82    |
 
 ### Copia incolla per i comandi
 gcloud dataproc clusters create scp --region europe-west9 --zone europe-west9-a --master-machine-type n4-standard-2 --master-boot-disk-size 100g --num-workers 2 --worker-machine-type n4-standard-2 --worker-boot-disk-size 100 --image-version 2.3
 
 gcloud dataproc jobs submit spark --cluster=scp --region=europe-west9 --jar=gs://scp-davide-copurchase/scp-copur.jar -- gs://scp-davide-copurchase/input.csv gs://scp-davide-copurchase/output
+
+### Commenti di sviluppo
+Il file è uno e va letto -> collo di bottiglia. => va partizionato

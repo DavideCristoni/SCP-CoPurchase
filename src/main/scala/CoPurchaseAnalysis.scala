@@ -1,65 +1,118 @@
-import org.apache.spark.sql.{SparkSession}
-import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
+import org.apache.hadoop.fs.{FileSystem, Path}
+import java.io.{BufferedReader, BufferedWriter, InputStreamReader, OutputStreamWriter}
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import org.apache.spark.HashPartitioner
+import scala.util.{Try, Success, Failure}
+import java.net.URI
 
 object CoPurchaseAnalysis {
-
   def main(args: Array[String]): Unit = {
-    if (args.length != 2) {
-      println("Usage: CoPurchaseAnalysis <input_path> <output_path>")
-      sys.exit(1)
-    }
-
-    val inputPath = args(0)
-    val outputPath = args(1)
-
-    val spark = SparkSession.builder()
-      .appName("CoPurchaseAnalysis")
-      .master("local[*]") // Usa tutti i core disponibili
+    val spark = SparkSession.builder
+      .appName("Co-Purchase Analysis")
       .getOrCreate()
 
     val sc = spark.sparkContext
 
-    // Carica il CSV: ogni riga è (order_id, product_id)
-    val rawData: RDD[(Int, Int)] = sc
-      .textFile(inputPath)
-      .map(_.trim)
-      .filter(_.nonEmpty)
-      .map { line =>
-        val Array(orderId, productId) = line.split(",").map(_.toInt)
-        (orderId, productId)
-      }
+    // === Percorsi ===
+    val workers = args(0)         //Questa info deve essere uguale al parametro di creazione del cluster
+    val coresPerWorker = args(1)  //Questa info deve essere uguale al parametro di creazione del cluster
+    val inputPath = args(2)
+    val outputPath = args(3)      //ATTENZIONE: cancellare i precedenti risultati prima di far partire il job
+    val logPath = args(4)         //I log vengono scritti in append
 
-    // Inizio misurazione tempo
-    val startTime = System.nanoTime()
+    val numPartitions = workers.toInt * coresPerWorker.toInt * 3
+    println(s"Using $numPartitions partitions")
 
-    // Gruppo per ordine: Map(orderId -> List(productId))
-    val ordersGrouped: RDD[(Int, Iterable[Int])] = rawData.groupByKey() //Dovrebbe causare shuffle
 
-    // Per ogni ordine, genero tutte le coppie uniche (x, y) con x < y
-    val productPairs: RDD[((Int, Int), Int)] = ordersGrouped.flatMap {
+
+    // === TIMER UTILI ===
+    val timeStart = System.nanoTime()
+    val readStart = System.nanoTime()
+
+    val raw = spark.read
+      .csv(inputPath)
+      .rdd
+      .flatMap(row =>
+        Try((row.getString(0).toInt, row.getString(1).toInt)).toOption
+      )
+
+    // Partiziono i dati per migliorare l'aggregateByKey
+    val rawPartitioned = raw.partitionBy(new HashPartitioner(numPartitions))
+
+    val readEnd = System.nanoTime()
+    val groupStart = System.nanoTime()
+
+    val grouped = rawPartitioned
+      .aggregateByKey(Set.empty[Int])(
+        (set, prod) => set + prod,
+        (set1, set2) => set1 ++ set2
+      )
+    val groupEnd = System.nanoTime()
+
+    val pairStart = System.nanoTime()
+    val productPairs = grouped.flatMap {
       case (_, products) =>
-        val prodList = products.toSet.toList.sorted
-        for {
-          i <- prodList.indices
-          j <- (i + 1) until prodList.length
-        } yield ((prodList(i), prodList(j)), 1)
+        val sorted = products.toList.sorted
+        sorted.combinations(2).map {
+          case List(p1, p2) => ((p1, p2), 1)
+        }
     }
 
-    // Sommo le occorrenze di ciascuna coppia
-    val coPurchaseCounts: RDD[(String)] = productPairs
+    val pairEnd = System.nanoTime()
+    val reduceStart = System.nanoTime()
+
+    val partitionedPairs = productPairs.partitionBy(new HashPartitioner(numPartitions))
+    val coPurchaseCounts = partitionedPairs
       .reduceByKey(_ + _)
       .map { case ((p1, p2), count) => s"$p1,$p2,$count" }
 
-    val count = coPurchaseCounts.count()
+    val reduceEnd = System.nanoTime()
+    val saveStart = System.nanoTime()
 
-    // Fine misurazione tempo
-    val endTime = System.nanoTime()
-    val durationMs = (endTime - startTime) / 1e6
+    coPurchaseCounts.saveAsTextFile(outputPath)
 
-    println(f"Tempo di esecuzione co-purchase: $durationMs%.2f ms")
+    val saveEnd = System.nanoTime()
+    val timeEnd = System.nanoTime()
 
-    // Salvo l’output in CSV
-    coPurchaseCounts.coalesce(1).saveAsTextFile(outputPath + ".csv")
+    // === TEMPI IN SECONDI ===
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    val timestamp = LocalDateTime.now().format(formatter)
+
+    val readTime   = readEnd - readStart
+    val groupTime  = groupEnd - groupStart
+    val pairTime   = pairEnd - pairStart
+    val reduceTime = reduceEnd - reduceStart
+    val saveTime   = saveEnd - saveStart
+    val totalTime  = timeEnd - timeStart
+
+    val csvRow = s"$timestamp,$readTime,$groupTime,$pairTime,$reduceTime,$saveTime,$totalTime,$numPartitions\n"
+
+    // === APPEND TO CSV ===
+    val conf = sc.hadoopConfiguration
+    val uri = new URI(logPath) // logPath = "gs://..."
+    val fs = FileSystem.get(uri, conf)
+    val path = new Path(logPath)
+
+    val updatedContent =
+      if (fs.exists(path)) {
+        // Legge tutto il contenuto esistente
+        val existingStream = fs.open(path)
+        val reader = new BufferedReader(new InputStreamReader(existingStream))
+        val lines = Iterator.continually(reader.readLine()).takeWhile(_ != null).mkString("\n")
+        reader.close()
+        lines + "\n" + csvRow
+      } else {
+        // Intestazione + prima riga
+        "timestamp,read,group,pairs,reduce,save,total,cores\n" + csvRow
+      }
+
+    // Sovrascrive il file (GCS non supporta append nativo)
+    val outputStream = fs.create(path, true) // true = overwrite
+    val writer = new BufferedWriter(new OutputStreamWriter(outputStream))
+    writer.write(updatedContent)
+    writer.close()
 
     spark.stop()
   }
