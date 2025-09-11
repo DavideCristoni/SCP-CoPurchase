@@ -66,23 +66,15 @@ evitare la consumazione inutile di crediti.**
 ```shell
 gcloud dataproc clusters delete <nome> --region <regione>
 ```
-## Tempi di esecuzione su europe-west9
 
-| tempo (ms) | num workers | speedup |
-|------------|-------------|---------|
-| 720696     | 1           | xx      |
-| 1040945    | 2           | xx      |
-| 1349805    | 3           | xx      |
-| 1382905    | 4           | xx      |
-
-## Tempi di esecuzione su europe-west1 con n1standard-4
+## Tempi di esecuzione su europe-west1 con n1-standard-4
 
 | tempo (ns)    | tempo (sec) | num nodi | speedup | scaling |
 |---------------|-------------|----------|---------|---------|
-| 566039127816  | 566         | 1        | --      | --      |
-| 274455106101  | 274         | 2        | 2,07    | 1,03    |
-| 179804647602  | 180         | 3        | 3,14    | 1,05    |
-| 171951171928  | 172         | 4        | 3,29    | 0,82    |
+| 718744825489  | 718         | 1        | 1       | 1       |
+| 324873888123  | 324         | 2        | 2,22    | 1,11    |
+| 257254619445  | 257         | 3        | 2.79    | 0,93    |
+| 219754301113  | 219         | 4        | 3,28    | 0,82    |
 
 ### Copia incolla per i comandi
 gcloud dataproc clusters create scp --region europe-west9 --zone europe-west9-a --master-machine-type n4-standard-2 --master-boot-disk-size 100g --num-workers 2 --worker-machine-type n4-standard-2 --worker-boot-disk-size 100 --image-version 2.3
