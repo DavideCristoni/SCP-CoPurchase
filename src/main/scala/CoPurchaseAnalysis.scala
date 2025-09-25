@@ -23,14 +23,10 @@ object CoPurchaseAnalysis {
     val logPath = args(4)         //I log vengono scritti in append
 
     val numPartitions = workers.toInt * coresPerWorker.toInt * 3
-    println(s"Using $numPartitions partitions")
-
-
+    println(s"CO-PUR: Using $numPartitions partitions")
 
     // === TIMER UTILI ===
     val timeStart = System.nanoTime()
-    val readStart = System.nanoTime()
-
     val raw = spark.read
       .csv(inputPath)
       .rdd
@@ -41,17 +37,13 @@ object CoPurchaseAnalysis {
     // Partiziono i dati per migliorare l'aggregateByKey
     val rawPartitioned = raw.partitionBy(new HashPartitioner(numPartitions))
 
-    val readEnd = System.nanoTime()
-    val groupStart = System.nanoTime()
 
     val grouped = rawPartitioned
       .aggregateByKey(Set.empty[Int])(
         (set, prod) => set + prod,
         (set1, set2) => set1 ++ set2
       )
-    val groupEnd = System.nanoTime()
 
-    val pairStart = System.nanoTime()
     val productPairs = grouped.flatMap {
       case (_, products) =>
         val sorted = products.toList.sorted
@@ -60,34 +52,24 @@ object CoPurchaseAnalysis {
         }
     }
 
-    val pairEnd = System.nanoTime()
-    val reduceStart = System.nanoTime()
-
     val partitionedPairs = productPairs.partitionBy(new HashPartitioner(numPartitions))
     val coPurchaseCounts = partitionedPairs
       .reduceByKey(_ + _)
       .map { case ((p1, p2), count) => s"$p1,$p2,$count" }
 
-    val reduceEnd = System.nanoTime()
-    val saveStart = System.nanoTime()
-
     coPurchaseCounts.repartition(1).saveAsTextFile(outputPath)
 
-    val saveEnd = System.nanoTime()
+    println(s"CO-PUR: Wrote output file on $outputPath")
+
     val timeEnd = System.nanoTime()
 
     // === TEMPI IN SECONDI ===
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     val timestamp = LocalDateTime.now().format(formatter)
 
-    val readTime   = readEnd - readStart
-    val groupTime  = groupEnd - groupStart
-    val pairTime   = pairEnd - pairStart
-    val reduceTime = reduceEnd - reduceStart
-    val saveTime   = saveEnd - saveStart
     val totalTime  = timeEnd - timeStart
 
-    val csvRow = s"$timestamp,$readTime,$groupTime,$pairTime,$reduceTime,$saveTime,$totalTime,$numPartitions\n"
+    val csvRow = s"$timestamp,$totalTime,$numPartitions\n"
 
     // === APPEND TO CSV ===
     val conf = sc.hadoopConfiguration
@@ -105,7 +87,7 @@ object CoPurchaseAnalysis {
         lines + "\n" + csvRow
       } else {
         // Intestazione + prima riga
-        "timestamp,read,group,pairs,reduce,save,total,cores\n" + csvRow
+        "timestamp,cores\n" + csvRow
       }
 
     // Sovrascrive il file (GCS non supporta append nativo)
@@ -113,6 +95,7 @@ object CoPurchaseAnalysis {
     val writer = new BufferedWriter(new OutputStreamWriter(outputStream))
     writer.write(updatedContent)
     writer.close()
+    println(s"CO-PUR: Wrote log file on $logPath")
 
     spark.stop()
   }

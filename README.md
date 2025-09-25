@@ -79,7 +79,4 @@ gcloud dataproc clusters delete <nome> --region <regione>
 ### Copia incolla per i comandi
 gcloud dataproc clusters create scp --region europe-west9 --zone europe-west9-a --master-machine-type n4-standard-2 --master-boot-disk-size 100g --num-workers 2 --worker-machine-type n4-standard-2 --worker-boot-disk-size 100 --image-version 2.3
 
-gcloud dataproc jobs submit spark --cluster=scp --region=europe-west9 --jar=gs://scp-davide-copurchase/scp-copur.jar -- gs://scp-davide-copurchase/input.csv gs://scp-davide-copurchase/output
-
-### Commenti di sviluppo
-Il file è uno e va letto -> collo di bottiglia. => va partizionato
+gcloud dataproc jobs submit spark --cluster=scp --region=europe-west9 --jar=gs://scp-davide-copurchase/scp-copur.jar -- gs://<nome bucket>/input.csv gs://<nome bucket>/output
